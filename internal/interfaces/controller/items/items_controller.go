@@ -128,6 +128,62 @@ func (h *ItemHandler) GetSummary(c echo.Context) error {
 	return c.JSON(http.StatusOK, summary)
 }
 
+func (h *ItemHandler) UpdateItem(c echo.Context) error {
+    idStr := c.Param("id")
+    id, err := strconv.ParseInt(idStr, 10, 64)
+    if err != nil {
+        return c.JSON(http.StatusBadRequest, ErrorResponse{
+            Error: "invalid item ID",
+        })
+    }
+
+    var input usecase.UpdateItemInput
+    if err := c.Bind(&input); err != nil {
+        return c.JSON(http.StatusBadRequest, ErrorResponse{
+            Error: "invalid request format",
+        })
+    }
+
+    // バリデーション（部分更新なので存在するフィールドだけ）
+    if validationErrors := validateUpdateItemInput(input); len(validationErrors) > 0 {
+        return c.JSON(http.StatusBadRequest, ErrorResponse{
+            Error:   "validation failed",
+            Details: validationErrors,
+        })
+    }
+
+    updatedItem, err := h.itemUsecase.UpdateItem(c.Request().Context(), id, input)
+    if err != nil {
+        if domainErrors.IsNotFoundError(err) {
+            return c.JSON(http.StatusNotFound, ErrorResponse{Error: "item not found"})
+        }
+        if domainErrors.IsValidationError(err) {
+            return c.JSON(http.StatusBadRequest, ErrorResponse{
+                Error:   "validation failed",
+                Details: []string{err.Error()},
+            })
+        }
+        return c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "failed to update item"})
+    }
+
+    return c.JSON(http.StatusOK, updatedItem)
+}
+
+func validateUpdateItemInput(input usecase.UpdateItemInput) []string {
+    var errs []string
+    if input.Name != "" && len(input.Name) > 100 {
+        errs = append(errs, "name must be 100 characters or less")
+    }
+    if input.Brand != "" && len(input.Brand) > 100 {
+        errs = append(errs, "brand must be 100 characters or less")
+    }
+    if input.PurchasePrice != nil && *input.PurchasePrice < 0 {
+        errs = append(errs, "purchase_price must be 0 or greater")
+    }
+    return errs
+}
+
+
 func validateCreateItemInput(input usecase.CreateItemInput) []string {
 	var errs []string
 
