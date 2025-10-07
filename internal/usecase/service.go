@@ -33,6 +33,13 @@ type itemUsecase struct {
 	itemRepo ItemRepository
 }
 
+// Create input struct (for PATCH)
+type UpdateItemInput struct {
+    Name          string  `json:"name,omitempty"`
+    Brand         string  `json:"brand,omitempty"`
+    PurchasePrice *int    `json:"purchase_price,omitempty"`
+}
+
 func NewItemUsecase(itemRepo ItemRepository) ItemUsecase {
 	return &itemUsecase{
 		itemRepo: itemRepo,
@@ -132,3 +139,38 @@ func (u *itemUsecase) GetCategorySummary(ctx context.Context) (*CategorySummary,
 		Total:      total,
 	}, nil
 }
+
+func (u *itemUsecase) UpdateItem(ctx context.Context, id int64, input UpdateItemInput) (*entity.Item, error) {
+    if id <= 0 {
+        return nil, domainErrors.ErrInvalidInput
+    }
+
+    item, err := u.itemRepo.FindByID(ctx, id)
+    if err != nil {
+        if domainErrors.IsNotFoundError(err) {
+            return nil, domainErrors.ErrItemNotFound
+        }
+        return nil, fmt.Errorf("failed to retrieve item: %w", err)
+    }
+
+    // 部分更新
+    if input.Name != "" {
+        item.Name = input.Name
+    }
+    if input.Brand != "" {
+        item.Brand = input.Brand
+    }
+    if input.PurchasePrice != nil {
+        item.PurchasePrice = *input.PurchasePrice
+    }
+
+    // DB に保存（repo に Update メソッドが必要）
+    updatedItem, err := u.itemRepo.Update(ctx, item)
+    if err != nil {
+        return nil, fmt.Errorf("failed to update item: %w", err)
+    }
+
+    return updatedItem, nil
+}
+
+
