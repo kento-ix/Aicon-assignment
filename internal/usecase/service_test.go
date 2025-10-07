@@ -456,3 +456,105 @@ func TestItemUsecase_GetCategorySummary(t *testing.T) {
 		})
 	}
 }
+
+func TestItemUsecase_UpdateItem(t *testing.T) {
+	tests := []struct {
+		name        string
+		id          int64
+		input       UpdateItemInput
+		setupMock   func(*MockItemRepository)
+		expectError bool
+		expectedErr error
+	}{
+		{
+			name: "正常系: 名前と価格を更新",
+			id:   1,
+			input: UpdateItemInput{
+				Name:          "更新済み時計",
+				PurchasePrice: ptrInt64(2000000),
+			},
+			setupMock: func(mockRepo *MockItemRepository) {
+				existingItem, _ := entity.NewItem("時計1", "時計", "ROLEX", 1000000, "2023-01-01")
+				existingItem.ID = 1
+				mockRepo.On("FindByID", mock.Anything, int64(1)).Return(existingItem, nil)
+
+				updatedItem := *existingItem
+				updatedItem.Name = "更新済み時計"
+				updatedItem.PurchasePrice = 2000000
+				mockRepo.On("Update", mock.Anything, mock.AnythingOfType("*entity.Item")).Return(&updatedItem, nil)
+			},
+			expectError: false,
+		},
+		{
+			name: "異常系: 存在しないID",
+			id:   999,
+			input: UpdateItemInput{
+				Name: "更新不可",
+			},
+			setupMock: func(mockRepo *MockItemRepository) {
+				mockRepo.On("FindByID", mock.Anything, int64(999)).Return((*entity.Item)(nil), domainErrors.ErrItemNotFound)
+			},
+			expectError: true,
+			expectedErr: domainErrors.ErrItemNotFound,
+		},
+		{
+			name: "異常系: 無効なID",
+			id:   0,
+			input: UpdateItemInput{
+				Name: "更新不可",
+			},
+			setupMock: func(mockRepo *MockItemRepository) {},
+			expectError: true,
+			expectedErr: domainErrors.ErrInvalidInput,
+		},
+		{
+			name: "異常系: UpdateでDBエラー",
+			id:   1,
+			input: UpdateItemInput{
+				Name: "更新不可",
+			},
+			setupMock: func(mockRepo *MockItemRepository) {
+				existingItem, _ := entity.NewItem("時計1", "時計", "ROLEX", 1000000, "2023-01-01")
+				existingItem.ID = 1
+				mockRepo.On("FindByID", mock.Anything, int64(1)).Return(existingItem, nil)
+				mockRepo.On("Update", mock.Anything, mock.AnythingOfType("*entity.Item")).Return((*entity.Item)(nil), domainErrors.ErrDatabaseError)
+			},
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockRepo := new(MockItemRepository)
+			tt.setupMock(mockRepo)
+			usecase := NewItemUsecase(mockRepo)
+
+			ctx := context.Background()
+			item, err := usecase.UpdateItem(ctx, tt.id, tt.input)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				if tt.expectedErr != nil {
+					assert.ErrorIs(t, err, tt.expectedErr)
+				}
+				assert.Nil(t, item)
+			} else {
+				assert.NoError(t, err)
+				assert.NotNil(t, item)
+				if tt.input.Name != "" {
+					assert.Equal(t, tt.input.Name, item.Name)
+				}
+				if tt.input.PurchasePrice != nil {
+					assert.Equal(t, *tt.input.PurchasePrice, item.PurchasePrice)
+				}
+			}
+
+			mockRepo.AssertExpectations(t)
+		})
+	}
+}
+
+func ptrInt64(v int) *int {
+	val := int(v)
+	return &val
+}
